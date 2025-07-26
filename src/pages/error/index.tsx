@@ -14,12 +14,23 @@ const Error = () => {
   const [data, setData] = useState(intl.get('暂无日志'));
   const retryTimes = useRef(1);
 
+  const loopStatus = (message: string) => {
+    if (retryTimes.current > 3) {
+      setData(message);
+      return;
+    }
+    retryTimes.current += 1;
+    setTimeout(() => {
+      getHealthStatus(false);
+    }, 3000);
+  };
+
   const getHealthStatus = (needLoading: boolean = true) => {
     needLoading && setLoading(true);
     request
-      .get(`${config.apiPrefix}public/health`)
+      .get(`${config.apiPrefix}health`)
       .then(({ error, data }) => {
-        if (data?.status === 1) {
+        if (data?.status === 'ok') {
           if (retryTimes.current > 1) {
             setTimeout(() => {
               window.location.reload();
@@ -27,14 +38,16 @@ const Error = () => {
           }
           return;
         }
-        if (retryTimes.current > 3) {
-          setData(error?.details);
-          return;
+
+        loopStatus(error?.details);
+      })
+      .catch((error) => {
+        const responseStatus = error.response.status;
+        if (responseStatus === 401) {
+          history.push('/login');
+        } else {
+          loopStatus(error.response?.message || error?.message);
         }
-        retryTimes.current += 1;
-        setTimeout(() => {
-          getHealthStatus(false);
-        }, 3000);
       })
       .finally(() => needLoading && setLoading(false));
   };
@@ -74,7 +87,7 @@ const Error = () => {
                 <div>{intl.get('2. 容器内执行 ql check、ql update')}</div>
                 <div>
                   {intl.get(
-                    '3. 如果无法解决，容器内执行 pm2 logs，拷贝执行结果'
+                    '3. 如果无法解决，容器内执行 pm2 logs，拷贝执行结果',
                   )}
                   <Typography.Link href="https://github.com/whyour/qinglong/issues/new?assignees=&labels=&template=bug_report.yml">
                     {intl.get('提交 issue')}

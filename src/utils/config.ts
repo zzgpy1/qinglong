@@ -128,10 +128,14 @@ export default {
       },
       {
         label: 'ntfyTopic',
-        tip: intl.get('ntfy的消息应用topic'),
+        tip: intl.get('ntfy应用topic'),
         required: true,
       },
       { label: 'ntfyPriority', tip: intl.get('推送消息的优先级') },
+      { label: 'ntfyToken', tip: intl.get('ntfy应用token') },
+      { label: 'ntfyUsername', tip: intl.get('ntfy应用用户名') },
+      { label: 'ntfyPassword', tip: intl.get('ntfy应用密码') },
+      { label: 'ntfyActions', tip: intl.get('ntfy用户动作') },
     ],
     chat: [
       {
@@ -400,13 +404,17 @@ export default {
         ),
         required: true,
       },
-      { label: 'emailUser', tip: intl.get('邮箱地址'), required: true },
+      { label: 'emailUser', tip: intl.get('邮箱认证地址'), required: true },
       {
         label: 'emailPass',
         tip: intl.get(
           'SMTP 登录密码，也可能为特殊口令，视具体邮件服务商说明而定',
         ),
         required: true,
+      },
+      {
+        label: 'emailTo',
+        tip: intl.get('收件邮箱地址，多个分号分隔，默认发送给发件邮箱地址'),
       },
     ],
     pushMe: [

@@ -1,6 +1,6 @@
 import { Service, Inject } from 'typedi';
 import winston from 'winston';
-import { createRandomString, getNetIp } from '../config/util';
+import { createRandomString } from '../config/util';
 import config from '../config';
 import jwt from 'jsonwebtoken';
 import { authenticator } from '@otplib/preset-default';
@@ -21,6 +21,8 @@ import dayjs from 'dayjs';
 import IP2Region from 'ip2region';
 import requestIp from 'request-ip';
 import uniq from 'lodash/uniq';
+import pickBy from 'lodash/pickBy';
+import isNil from 'lodash/isNil';
 import { shareStore } from '../shared/store';
 
 @Service()
@@ -93,9 +95,9 @@ export default class UserService {
     }
     if (username === cUsername && password === cPassword) {
       const data = createRandomString(50, 100);
-      const expiration = twoFactorActivated ? 60 : 20;
-      let token = jwt.sign({ data }, config.secret as any, {
-        expiresIn: 60 * 60 * 24 * expiration,
+      const expiration = twoFactorActivated ? '60d' : '20d';
+      let token = jwt.sign({ data }, config.jwt.secret, {
+        expiresIn: config.jwt.expiresIn || expiration,
         algorithm: 'HS384',
       });
 
@@ -131,7 +133,14 @@ export default class UserService {
       this.getLoginLog();
       return {
         code: 200,
-        data: { token, lastip, lastaddr, lastlogon, retries, platform },
+        data: {
+          token,
+          lastip,
+          lastaddr,
+          lastlogon,
+          retries,
+          platform,
+        },
       };
     } else {
       await this.updateAuthInfo(content, {
@@ -264,7 +273,16 @@ export default class UserService {
     if (isValid) {
       return this.login({ username, password }, req, false);
     } else {
-      const { ip, address } = await getNetIp(req);
+      const ip = requestIp.getClientIp(req) || '';
+      const query = new IP2Region();
+      const ipAddress = query.search(ip);
+      let address = '';
+      if (ipAddress) {
+        const { country, province, city, isp } = ipAddress;
+        address = uniq([country, province, city, isp])
+          .filter(Boolean)
+          .join(' ');
+      }
       await this.updateAuthInfo(authInfo, {
         lastip: ip,
         lastaddr: address,
@@ -347,12 +365,18 @@ export default class UserService {
   }
 
   public async resetAuthInfo(info: Partial<AuthInfo>) {
-    const { retries, twoFactorActivated, password } = info;
+    const { retries, twoFactorActivated, password, username } = info;
     const authInfo = await this.getAuthInfo();
-    await this.updateAuthInfo(authInfo, {
-      retries,
-      twoFactorActivated,
-      password,
-    });
+    const payload = pickBy(
+      {
+        retries,
+        twoFactorActivated,
+        password,
+        username,
+      },
+      (x) => !isNil(x),
+    );
+
+    await this.updateAuthInfo(authInfo, payload);
   }
 }

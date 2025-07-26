@@ -11,6 +11,7 @@ import {
   killTask,
   getUniqPath,
   safeJSONParse,
+  isDemoEnv,
 } from '../config/util';
 import { Op, where, col as colFn, FindOptions, fn, Order } from 'sequelize';
 import path from 'path';
@@ -53,6 +54,10 @@ export default class CronService {
     tab.saved = false;
     const doc = await this.insert(tab);
 
+    if (isDemoEnv()) {
+      return doc;
+    }
+
     if (this.isNodeCron(doc) && !this.isSpecialSchedule(doc.schedule)) {
       await cronClient.addCron([
         {
@@ -79,7 +84,7 @@ export default class CronService {
     tab.saved = false;
     const newDoc = await this.updateDb(tab);
 
-    if (doc.isDisabled === 1) {
+    if (doc.isDisabled === 1 || isDemoEnv()) {
       return newDoc;
     }
 
@@ -210,14 +215,24 @@ export default class CronService {
             operate2 = Op.and;
             break;
           case 'In':
-            q[Op.or] = [
-              {
-                [property]: Array.isArray(value) ? value : [value],
-              },
-              property === 'status' && value.includes(2)
-                ? { isDisabled: 1 }
-                : {},
-            ];
+            if (
+              property === 'status' &&
+              !value.includes(CrontabStatus.disabled)
+            ) {
+              q[Op.and] = [
+                { [property]: Array.isArray(value) ? value : [value] },
+                { isDisabled: 0 },
+              ];
+            } else {
+              q[Op.or] = [
+                {
+                  [property]: Array.isArray(value) ? value : [value],
+                },
+                property === 'status' && value.includes(CrontabStatus.disabled)
+                  ? { isDisabled: 1 }
+                  : {},
+              ];
+            }
             break;
           case 'Nin':
             q[Op.and] = [
@@ -528,7 +543,7 @@ export default class CronService {
     await CrontabModel.update({ isDisabled: 0 }, { where: { id: ids } });
     const docs = await CrontabModel.findAll({ where: { id: ids } });
     const sixCron = docs
-      .filter((x) => this.isNodeCron(x))
+      .filter((x) => this.isNodeCron(x) && !this.isSpecialSchedule(x.schedule))
       .map((doc) => ({
         name: doc.name || '',
         id: String(doc.id),
@@ -536,6 +551,10 @@ export default class CronService {
         command: this.makeCommand(doc),
         extra_schedules: doc.extra_schedules || [],
       }));
+
+    if (isDemoEnv()) {
+      return;
+    }
     await cronClient.addCron(sixCron);
     await this.setCrontab();
   }
@@ -551,7 +570,10 @@ export default class CronService {
     if (logFileExist) {
       return await getFileContentByName(`${absolutePath}`);
     } else {
-      return '任务未运行';
+      return typeof doc.status === 'number' &&
+        [CrontabStatus.queued, CrontabStatus.running].includes(doc.status)
+        ? '运行中...'
+        : '日志不存在...';
     }
   }
 
@@ -609,11 +631,9 @@ export default class CronService {
     const tabs = data ?? (await this.crontabs());
     var crontab_string = '';
     tabs.data.forEach((tab) => {
-      const _schedule = tab.schedule && tab.schedule.split(/ +/);
       if (
         tab.isDisabled === 1 ||
-        _schedule!.length !== 5 ||
-        tab.extra_schedules?.length ||
+        this.isNodeCron(tab) ||
         this.isSpecialSchedule(tab.schedule)
       ) {
         crontab_string += '# ';
@@ -671,13 +691,11 @@ export default class CronService {
 
   public async autosave_crontab() {
     const tabs = await this.crontabs();
-    this.setCrontab(tabs);
-
     const regularCrons = tabs.data
       .filter(
         (x) =>
-          this.isNodeCron(x) &&
           x.isDisabled !== 1 &&
+          this.isNodeCron(x) &&
           !this.isSpecialSchedule(x.schedule),
       )
       .map((doc) => ({
@@ -687,7 +705,13 @@ export default class CronService {
         command: this.makeCommand(doc),
         extra_schedules: doc.extra_schedules || [],
       }));
+
+    if (isDemoEnv()) {
+      await writeFileWithLock(config.crontabFile, '');
+      return;
+    }
     await cronClient.addCron(regularCrons);
+    this.setCrontab(tabs);
   }
 
   public async bootTask() {

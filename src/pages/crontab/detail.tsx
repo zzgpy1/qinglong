@@ -56,12 +56,10 @@ interface LogItem {
 const CronDetailModal = ({
   cron = {},
   handleCancel,
-  visible,
   theme,
   isPhone,
 }: {
   cron?: any;
-  visible: boolean;
   handleCancel: (needUpdate?: boolean) => void;
   theme: string;
   isPhone: boolean;
@@ -202,9 +200,6 @@ const CronDetailModal = ({
             .catch((e) => reject(e));
         });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -232,9 +227,6 @@ const CronDetailModal = ({
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -258,9 +250,6 @@ const CronDetailModal = ({
               setCurrentCron({ ...currentCron, status: CrontabStatus.idle });
             }
           });
-      },
-      onCancel() {
-        console.log('Cancel');
       },
     });
   };
@@ -298,9 +287,6 @@ const CronDetailModal = ({
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -336,9 +322,6 @@ const CronDetailModal = ({
               });
             }
           });
-      },
-      onCancel() {
-        console.log('Cancel');
       },
     });
   };
@@ -455,7 +438,7 @@ const CronDetailModal = ({
         </div>
       }
       centered
-      open={visible}
+      open={true}
       forceRender
       footer={false}
       onCancel={() => handleCancel()}
@@ -574,15 +557,16 @@ const CronDetailModal = ({
           {contentList[activeTabKey]}
         </Card>
       </div>
-      <CronLogModal
-        visible={isLogModalVisible}
-        handleCancel={() => {
-          setIsLogModalVisible(false);
-        }}
-        cron={cron}
-        data={log}
-        logUrl={logUrl}
-      />
+      {isLogModalVisible && (
+        <CronLogModal
+          handleCancel={() => {
+            setIsLogModalVisible(false);
+          }}
+          cron={cron}
+          data={log}
+          logUrl={logUrl}
+        />
+      )}
     </Modal>
   );
 };

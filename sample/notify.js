@@ -1,6 +1,41 @@
 const querystring = require('node:querystring');
-const got = require('got');
+const { request: undiciRequest, ProxyAgent, FormData } = require('undici');
 const timeout = 15000;
+
+async function request(url, options = {}) {
+  const { json, form, body, headers = {}, ...rest } = options;
+
+  const finalHeaders = { ...headers };
+  let finalBody = body;
+
+  if (json) {
+    finalHeaders['content-type'] = 'application/json';
+    finalBody = JSON.stringify(json);
+  } else if (form) {
+    finalBody = form;
+    delete finalHeaders['content-type'];
+  }
+
+  return undiciRequest(url, {
+    headers: finalHeaders,
+    body: finalBody,
+    ...rest,
+  });
+}
+
+function post(url, options = {}) {
+  return request(url, { ...options, method: 'POST' });
+}
+
+function get(url, options = {}) {
+  return request(url, { ...options, method: 'GET' });
+}
+
+const httpClient = {
+  request,
+  post,
+  get,
+};
 
 const push_config = {
   HITOKOTO: true, // 启用一言（随机句子）
@@ -84,7 +119,8 @@ const push_config = {
   AIBOTK_NAME: '', // 智能微秘书  发送群名 或者好友昵称和type要对应好
 
   SMTP_SERVICE: '', // 邮箱服务名称，比如 126、163、Gmail、QQ 等，支持列表 https://github.com/nodemailer/nodemailer/blob/master/lib/well-known/services.json
-  SMTP_EMAIL: '', // SMTP 收发件邮箱，通知将会由自己发给自己
+  SMTP_EMAIL: '', // SMTP 发件邮箱
+  SMTP_TO: '', // SMTP 收件邮箱，默认通知将会发给发件邮箱
   SMTP_PASSWORD: '', // SMTP 登录密码，也可能为特殊口令，视具体邮件服务商说明而定
   SMTP_NAME: '', // SMTP 收发件人姓名，可随意填写
 
@@ -104,6 +140,10 @@ const push_config = {
   NTFY_URL: '', // ntfy地址,如https://ntfy.sh,默认为https://ntfy.sh
   NTFY_TOPIC: '', // ntfy的消息应用topic
   NTFY_PRIORITY: '3', // 推送消息优先级,默认为3
+  NTFY_TOKEN: '', // 推送token,可选
+  NTFY_USERNAME: '', // 推送用户名称,可选
+  NTFY_PASSWORD: '', // 推送用户密码,可选
+  NTFY_ACTIONS: '', // 推送用户动作,可选
 
   // 官方文档: https://wxpusher.zjiecode.com/docs/
   // 管理后台: https://wxpusher.zjiecode.com/admin/
@@ -122,9 +162,9 @@ for (const key in push_config) {
 const $ = {
   post: (params, callback) => {
     const { url, ...others } = params;
-    got.post(url, others).then(
-      (res) => {
-        let body = res.body;
+    httpClient.post(url, others).then(
+      async (res) => {
+        let body = await res.body.text();
         try {
           body = JSON.parse(body);
         } catch (error) {}
@@ -137,9 +177,9 @@ const $ = {
   },
   get: (params, callback) => {
     const { url, ...others } = params;
-    got.get(url, others).then(
-      (res) => {
-        let body = res.body;
+    httpClient.get(url, others).then(
+      async (res) => {
+        let body = await res.body.text();
         try {
           body = JSON.parse(body);
         } catch (error) {}
@@ -155,8 +195,8 @@ const $ = {
 
 async function one() {
   const url = 'https://v1.hitokoto.cn/';
-  const res = await got.get(url);
-  const body = JSON.parse(res.body);
+  const res = await httpClient.request(url);
+  const body = await res.body.json();
   return `${body.hitokoto}    ----${body.from}`;
 }
 
@@ -441,21 +481,11 @@ function tgBotNotify(text, desp) {
         timeout,
       };
       if (TG_PROXY_HOST && TG_PROXY_PORT) {
-        const { HttpProxyAgent, HttpsProxyAgent } = require('hpagent');
-        const _options = {
-          keepAlive: true,
-          keepAliveMsecs: 1000,
-          maxSockets: 256,
-          maxFreeSockets: 256,
-          proxy: `http://${TG_PROXY_AUTH}${TG_PROXY_HOST}:${TG_PROXY_PORT}`,
-        };
-        const httpAgent = new HttpProxyAgent(_options);
-        const httpsAgent = new HttpsProxyAgent(_options);
-        const agent = {
-          http: httpAgent,
-          https: httpsAgent,
-        };
-        options.agent = agent;
+        let agent;
+        agent = new ProxyAgent({
+          uri: `http://${TG_PROXY_AUTH}${TG_PROXY_HOST}:${TG_PROXY_PORT}`,
+        });
+        options.dispatcher = agent;
       }
       $.post(options, (err, resp, data) => {
         try {
@@ -993,7 +1023,8 @@ function fsBotNotify(text, desp) {
 }
 
 async function smtpNotify(text, desp) {
-  const { SMTP_EMAIL, SMTP_PASSWORD, SMTP_SERVICE, SMTP_NAME } = push_config;
+  const { SMTP_EMAIL, SMTP_TO, SMTP_PASSWORD, SMTP_SERVICE, SMTP_NAME } =
+    push_config;
   if (![SMTP_EMAIL, SMTP_PASSWORD].every(Boolean) || !SMTP_SERVICE) {
     return;
   }
@@ -1011,7 +1042,7 @@ async function smtpNotify(text, desp) {
     const addr = SMTP_NAME ? `"${SMTP_NAME}" <${SMTP_EMAIL}>` : SMTP_EMAIL;
     const info = await transporter.sendMail({
       from: addr,
-      to: addr,
+      to: SMTP_TO ? SMTP_TO.split(';') : addr,
       subject: text,
       html: `${desp.replace(/\n/g, '<br/>')}`,
     });
@@ -1207,17 +1238,18 @@ function webhookNotify(text, desp) {
       '$title',
       encodeURIComponent(text),
     ).replaceAll('$content', encodeURIComponent(desp));
-    got(formatUrl, options).then((resp) => {
+    httpClient.request(formatUrl, options).then(async (resp) => {
+      const body = await resp.body.text();
       try {
         if (resp.statusCode !== 200) {
-          console.log(`自定义发送通知消息失败😞 ${resp.body}\n`);
+          console.log(`自定义发送通知消息失败😞 ${body}\n`);
         } else {
-          console.log(`自定义发送通知消息成功🎉 ${resp.body}\n`);
+          console.log(`自定义发送通知消息成功🎉 ${body}\n`);
         }
       } catch (e) {
         $.logErr(e, resp);
       } finally {
-        resolve(resp.body);
+        resolve(body);
       }
     });
   });
@@ -1230,7 +1262,7 @@ function ntfyNotify(text, desp) {
   }
 
   return new Promise((resolve) => {
-    const { NTFY_URL, NTFY_TOPIC, NTFY_PRIORITY } = push_config;
+    const { NTFY_URL, NTFY_TOPIC, NTFY_PRIORITY, NTFY_TOKEN, NTFY_USERNAME, NTFY_PASSWORD, NTFY_ACTIONS } = push_config;
     if (NTFY_TOPIC) {
       const options = {
         url: `${NTFY_URL || 'https://ntfy.sh'}/${NTFY_TOPIC}`,
@@ -1238,9 +1270,19 @@ function ntfyNotify(text, desp) {
         headers: {
           Title: `${encodeRFC2047(text)}`,
           Priority: NTFY_PRIORITY || '3',
+          Icon: 'https://qn.whyour.cn/logo.png',
         },
         timeout,
       };
+      if (NTFY_TOKEN) {
+        options.headers['Authorization'] = `Bearer ${NTFY_TOKEN}`;
+      } else if (NTFY_USERNAME && NTFY_PASSWORD) {
+        options.headers['Authorization'] = `Basic ${Buffer.from(`${NTFY_USERNAME}:${NTFY_PASSWORD}`).toString('base64')}`;
+      }
+      if (NTFY_ACTIONS) {
+        options.headers['Actions'] = encodeRFC2047(NTFY_ACTIONS);
+      }
+
       $.post(options, (err, resp, data) => {
         try {
           if (err) {

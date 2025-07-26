@@ -1,5 +1,3 @@
-import { IncomingHttpHeaders } from 'http';
-
 export enum NotificationMode {
   'gotify' = 'gotify',
   'goCqHttpBot' = 'goCqHttpBot',
@@ -117,6 +115,7 @@ export class EmailNotification extends NotificationBaseInfo {
   public emailService: string = '';
   public emailUser: string = '';
   public emailPass: string = '';
+  public emailTo: string = '';
 }
 
 export class PushMeNotification extends NotificationBaseInfo {
@@ -149,6 +148,10 @@ export class NtfyNotification extends NotificationBaseInfo {
   public ntfyUrl = '';
   public ntfyTopic = '';
   public ntfyPriority = '';
+  public ntfyToken = '';
+  public ntfyUsername = '';
+  public ntfyPassword = '';
+  public ntfyActions = '';
 }
 
 export class WxPusherBotNotification extends NotificationBaseInfo {

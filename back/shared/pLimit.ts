@@ -37,7 +37,7 @@ class TaskLimit {
     concurrency: Math.max(os.cpus().length, 4),
   });
   private client = new ApiClient(
-    `0.0.0.0:${config.cronPort}`,
+    `0.0.0.0:${config.grpcPort}`,
     credentials.createInsecure(),
     { 'grpc.enable_http_proxy': 0 },
   );
@@ -187,6 +187,19 @@ class TaskLimit {
   ): Promise<T | void> {
     fn.schedule = schedule;
     return this.scriptLimit.add(fn, options);
+  }
+
+  public async waitDependencyQueueDone(): Promise<void> {
+    if (this.dependenyLimit.size === 0 && this.dependenyLimit.pending === 0) {
+      return;
+    }
+    return new Promise((resolve) => {
+      const onIdle = () => {
+        this.dependenyLimit.removeListener('idle', onIdle);
+        resolve();
+      };
+      this.dependenyLimit.on('idle', onIdle);
+    });
   }
 
   public runDependeny<T>(

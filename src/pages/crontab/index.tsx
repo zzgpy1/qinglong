@@ -20,7 +20,7 @@ import {
   PushpinOutlined,
   SettingOutlined,
   StopOutlined,
-  UnorderedListOutlined
+  UnorderedListOutlined,
 } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-layout';
 import { history, useOutletContext } from '@umijs/max';
@@ -36,7 +36,7 @@ import {
   TablePaginationConfig,
   Tabs,
   Tag,
-  Typography
+  Typography,
 } from 'antd';
 import { ColumnProps } from 'antd/lib/table';
 import { FilterValue, SorterResult } from 'antd/lib/table/interface';
@@ -453,9 +453,6 @@ const Crontab = () => {
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -487,9 +484,6 @@ const Crontab = () => {
               }
             }
           });
-      },
-      onCancel() {
-        console.log('Cancel');
       },
     });
   };
@@ -523,9 +517,6 @@ const Crontab = () => {
               }
             }
           });
-      },
-      onCancel() {
-        console.log('Cancel');
       },
     });
   };
@@ -569,9 +560,6 @@ const Crontab = () => {
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -613,9 +601,6 @@ const Crontab = () => {
               }
             }
           });
-      },
-      onCancel() {
-        console.log('Cancel');
       },
     });
   };
@@ -738,9 +723,6 @@ const Crontab = () => {
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -765,9 +747,6 @@ const Crontab = () => {
               getCrons();
             }
           });
-      },
-      onCancel() {
-        console.log('Cancel');
       },
     });
   };
@@ -1058,55 +1037,58 @@ const Crontab = () => {
           components={isPhone || pageConf.size < 50 ? undefined : vt}
         />
       </div>
-      <CronLogModal
-        visible={isLogModalVisible}
-        handleCancel={() => {
-          getCronDetail(logCron);
-          setIsLogModalVisible(false);
-        }}
-        cron={logCron}
-      />
-      <CronModal
-        visible={isModalVisible}
-        handleCancel={handleCancel}
-        cron={editedCron}
-      />
-      <CronLabelModal
-        visible={isLabelModalVisible}
-        handleCancel={(needUpdate?: boolean) => {
-          setIsLabelModalVisible(false);
-          if (needUpdate) {
-            getCrons();
-          }
-        }}
-        ids={selectedRowIds}
-      />
-      <CronDetailModal
-        visible={isDetailModalVisible}
-        handleCancel={() => {
-          setIsDetailModalVisible(false);
-        }}
-        cron={detailCron}
-        theme={theme}
-        isPhone={isPhone}
-      />
-      <ViewCreateModal
-        visible={isCreateViewModalVisible}
-        handleCancel={(data) => {
-          setIsCreateViewModalVisible(false);
-          getCronViews();
-        }}
-      />
-      <ViewManageModal
-        cronViews={cronViews}
-        visible={isViewManageModalVisible}
-        handleCancel={() => {
-          setIsViewManageModalVisible(false);
-        }}
-        cronViewChange={(data) => {
-          getCronViews();
-        }}
-      />
+      {isLogModalVisible && (
+        <CronLogModal
+          handleCancel={() => {
+            getCronDetail(logCron);
+            setIsLogModalVisible(false);
+          }}
+          cron={logCron}
+        />
+      )}
+      {isModalVisible && (
+        <CronModal handleCancel={handleCancel} cron={editedCron} />
+      )}
+      {isLabelModalVisible && (
+        <CronLabelModal
+          handleCancel={(needUpdate?: boolean) => {
+            setIsLabelModalVisible(false);
+            if (needUpdate) {
+              getCrons();
+            }
+          }}
+          ids={selectedRowIds}
+        />
+      )}
+      {isDetailModalVisible && (
+        <CronDetailModal
+          handleCancel={() => {
+            setIsDetailModalVisible(false);
+          }}
+          cron={detailCron}
+          theme={theme}
+          isPhone={isPhone}
+        />
+      )}
+      {isCreateViewModalVisible && (
+        <ViewCreateModal
+          handleCancel={(data) => {
+            setIsCreateViewModalVisible(false);
+            getCronViews();
+          }}
+        />
+      )}
+      {isViewManageModalVisible && (
+        <ViewManageModal
+          cronViews={cronViews}
+          handleCancel={() => {
+            setIsViewManageModalVisible(false);
+          }}
+          cronViewChange={(data) => {
+            getCronViews();
+          }}
+        />
+      )}
     </PageContainer>
   );
 };

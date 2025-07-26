@@ -1,16 +1,15 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import got from 'got';
-import iconv from 'iconv-lite';
 import { exec } from 'child_process';
-import FormData from 'form-data';
-import psTreeFun from 'pstree.remy';
+import psTreeFun from 'ps-tree';
 import { promisify } from 'util';
 import { load } from 'js-yaml';
 import config from './index';
-import { TASK_COMMAND } from './const';
+import { PYTHON_INSTALL_DIR, TASK_COMMAND } from './const';
 import Logger from '../loaders/logger';
 import { writeFileWithLock } from '../shared/utils';
+import { DependenceTypes } from '../data/dependence';
+import { FormData } from 'undici';
 
 export * from './share';
 
@@ -55,78 +54,6 @@ export function getToken(req: any) {
       .replace('desktop-', '');
   }
   return '';
-}
-
-export async function getNetIp(req: any) {
-  const ipArray = [
-    ...new Set([
-      ...(req.headers['x-real-ip'] || '').split(','),
-      ...(req.headers['x-forwarded-for'] || '').split(','),
-      req.ip,
-      ...req.ips,
-      req.socket.remoteAddress,
-    ]),
-  ].filter(Boolean);
-
-  let ip = ipArray[0];
-
-  if (ipArray.length > 1) {
-    for (let i = 0; i < ipArray.length; i++) {
-      const ipNumArray = ipArray[i].split('.');
-      const tmp = ipNumArray[0] + '.' + ipNumArray[1];
-      if (
-        tmp === '192.168' ||
-        (ipNumArray[0] === '172' &&
-          ipNumArray[1] >= 16 &&
-          ipNumArray[1] <= 32) ||
-        tmp === '10.7' ||
-        tmp === '127.0'
-      ) {
-        continue;
-      }
-      ip = ipArray[i];
-      break;
-    }
-  }
-
-  ip = ip.substr(ip.lastIndexOf(':') + 1, ip.length);
-  if (ip.includes('127.0') || ip.includes('192.168') || ip.includes('10.7')) {
-    ip = '';
-  }
-
-  if (!ip) {
-    return { address: `获取失败`, ip };
-  }
-
-  try {
-    const csdnApi = got
-      .get(`https://searchplugin.csdn.net/api/v1/ip/get?ip=${ip}`, {
-        timeout: 10000,
-        retry: 0,
-      })
-      .text();
-    const pconlineApi = got
-      .get(`https://whois.pconline.com.cn/ipJson.jsp?ip=${ip}&json=true`, {
-        timeout: 10000,
-        retry: 0,
-      })
-      .buffer();
-    const [csdnBody, pconlineBody] = await await Promise.all<any>([
-      csdnApi,
-      pconlineApi,
-    ]);
-    const csdnRes = JSON.parse(csdnBody);
-    const pconlineRes = JSON.parse(iconv.decode(pconlineBody, 'GBK'));
-    let address = '';
-    if (csdnBody && csdnRes.code == 200) {
-      address = csdnRes.data.address;
-    } else if (pconlineRes && pconlineRes.addr) {
-      address = pconlineRes.addr;
-    }
-    return { address, ip };
-  } catch (error) {
-    return { address: `获取失败`, ip };
-  }
 }
 
 export function getPlatform(userAgent: string): 'mobile' | 'desktop' {
@@ -237,7 +164,7 @@ enum FileType {
   'file',
 }
 
-interface IFile {
+export interface IFile {
   title: string;
   key: string;
   type: 'directory' | 'file';
@@ -305,23 +232,51 @@ export async function readDir(
   dir: string,
   baseDir: string = '',
   blacklist: string[] = [],
-) {
-  const relativePath = path.relative(baseDir, dir);
-  const files = await fs.readdir(dir);
-  const result: any = files
-    .filter((x) => !blacklist.includes(x))
-    .map(async (file: string) => {
-      const subPath = path.join(dir, file);
+): Promise<IFile[]> {
+  const absoluteDir = path.join(baseDir, dir);
+  const relativePath = path.relative(baseDir, absoluteDir);
+
+  try {
+    const files = await fs.readdir(absoluteDir);
+    const result: IFile[] = [];
+
+    for (const file of files) {
+      const subPath = path.join(absoluteDir, file);
       const stats = await fs.lstat(subPath);
       const key = path.join(relativePath, file);
-      return {
-        title: file,
-        type: stats.isDirectory() ? 'directory' : 'file',
-        key,
-        parent: relativePath,
-      };
-    });
-  return result;
+
+      if (blacklist.includes(file) || stats.isSymbolicLink()) {
+        continue;
+      }
+
+      if (stats.isDirectory()) {
+        result.push({
+          title: file,
+          type: 'directory',
+          key,
+          parent: relativePath,
+          createTime: stats.birthtime.getTime(),
+          children: [],
+        });
+      } else {
+        result.push({
+          title: file,
+          type: 'file',
+          key,
+          parent: relativePath,
+          size: stats.size,
+          createTime: stats.birthtime.getTime(),
+        });
+      }
+    }
+
+    return result;
+  } catch (error: any) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function promiseExec(command: string): Promise<string> {
@@ -352,9 +307,9 @@ export function parseHeaders(headers: string) {
   if (!headers) return {};
 
   const parsed: any = {};
-  let key;
-  let val;
-  let i;
+  let key: string;
+  let val: string;
+  let i: number;
 
   headers &&
     headers.split('\n').forEach(function parser(line) {
@@ -433,11 +388,11 @@ export function parseBody(
 
 export function psTree(pid: number): Promise<number[]> {
   return new Promise((resolve, reject) => {
-    psTreeFun(pid, (err: any, pids: number[]) => {
+    psTreeFun(pid, (err: any, children) => {
       if (err) {
         reject(err);
       }
-      resolve(pids.filter((x) => !isNaN(x)));
+      resolve(children.map((x) => Number(x.PID)).filter((x) => !isNaN(x)));
     });
   });
 }
@@ -557,4 +512,60 @@ export async function setSystemTimezone(timezone: string): Promise<boolean> {
     Logger.error('[setSystemTimezone失败]', error);
     return false;
   }
+}
+
+export function getGetCommand(type: DependenceTypes, name: string): string {
+  const baseCommands = {
+    [DependenceTypes.nodejs]: `pnpm ls -g  | grep "${name}" | head -1`,
+    [DependenceTypes.python3]: `
+    python3 -c "exec('''
+name='${name}'
+try:
+    from importlib.metadata import version
+    print(version(name))
+except:
+    import importlib.util as u
+    import importlib.metadata as m
+    spec=u.find_spec(name)
+    print(name if spec else '')
+''')"`,
+    [DependenceTypes.linux]: `apk info -es ${name}`,
+  };
+
+  return baseCommands[type];
+}
+
+export function getInstallCommand(type: DependenceTypes, name: string): string {
+  const baseCommands = {
+    [DependenceTypes.nodejs]: 'pnpm add -g',
+    [DependenceTypes.python3]:
+      'pip3 install --disable-pip-version-check --root-user-action=ignore',
+    [DependenceTypes.linux]: 'apk add --no-check-certificate',
+  };
+
+  let command = baseCommands[type];
+
+  if (type === DependenceTypes.python3 && PYTHON_INSTALL_DIR) {
+    command = `${command} --prefix=${PYTHON_INSTALL_DIR}`;
+  }
+
+  return `${command} ${name.trim()}`;
+}
+
+export function getUninstallCommand(
+  type: DependenceTypes,
+  name: string,
+): string {
+  const baseCommands = {
+    [DependenceTypes.nodejs]: 'pnpm remove -g',
+    [DependenceTypes.python3]:
+      'pip3 uninstall --disable-pip-version-check --root-user-action=ignore -y',
+    [DependenceTypes.linux]: 'apk del',
+  };
+
+  return `${baseCommands[type]} ${name.trim()}`;
+}
+
+export function isDemoEnv() {
+  return process.env.DeployEnv === 'demo';
 }

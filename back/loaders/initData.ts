@@ -13,7 +13,7 @@ import { AuthDataType, SystemModel } from '../data/system';
 import SystemService from '../services/system';
 import UserService from '../services/user';
 import { writeFile, readFile } from 'fs/promises';
-import { createRandomString, safeJSONParse } from '../config/util';
+import { createRandomString, fileExist, safeJSONParse } from '../config/util';
 import OpenService from '../services/open';
 import { shareStore } from '../shared/store';
 import Logger from './logger';
@@ -56,8 +56,11 @@ export default async () => {
       password: 'admin',
     };
     try {
-      const content = await readFile(config.authConfigFile, 'utf8');
-      authInfo = safeJSONParse(content);
+      const authFileExist = await fileExist(config.authConfigFile);
+      if (authFileExist) {
+        const content = await readFile(config.authConfigFile, 'utf8');
+        authInfo = safeJSONParse(content);
+      }
     } catch (error) {
       Logger.warn('Failed to read auth config file, using default credentials');
     }
@@ -68,24 +71,26 @@ export default async () => {
     });
   }
 
-  const installDependencies = () => {
-    // 初始化时安装所有处于安装中，安装成功，安装失败的依赖
-    DependenceModel.findAll({
+  const installDependencies = async () => {
+    const docs = await DependenceModel.findAll({
       where: {},
       order: [
         ['type', 'DESC'],
         ['createdAt', 'DESC'],
       ],
       raw: true,
-    }).then(async (docs) => {
-      await DependenceModel.update(
-        { status: DependenceStatus.queued, log: [] },
-        { where: { id: docs.map((x) => x.id!) } },
-      );
-      setTimeout(() => {
-        dependenceService.installDependenceOneByOne(docs);
-      }, 5000);
     });
+
+    await DependenceModel.update(
+      { status: DependenceStatus.queued, log: [] },
+      { where: { id: docs.map((x) => x.id!) } },
+    );
+
+    setTimeout(async () => {
+      await dependenceService.installDependenceOneByOne(docs);
+
+      require('./bootAfter').default();
+    }, 5000);
   };
 
   // 初始化更新 linux/python/nodejs 镜像源配置

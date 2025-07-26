@@ -292,9 +292,6 @@ const Env = () => {
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -336,9 +333,6 @@ const Env = () => {
               setValue(result);
             }
           });
-      },
-      onCancel() {
-        console.log('Cancel');
       },
     });
   };
@@ -456,9 +450,6 @@ const Env = () => {
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -483,9 +474,6 @@ const Env = () => {
               getEnvs();
             }
           });
-      },
-      onCancel() {
-        console.log('Cancel');
       },
     });
   };
@@ -628,16 +616,15 @@ const Env = () => {
           />
         </DndProvider>
       </div>
-      <EnvModal
-        visible={isModalVisible}
-        handleCancel={handleCancel}
-        env={editedEnv}
-      />
-      <EditNameModal
-        visible={isEditNameModalVisible}
-        handleCancel={handleEditNameCancel}
-        ids={selectedRowIds}
-      />
+      {isModalVisible && (
+        <EnvModal handleCancel={handleCancel} env={editedEnv} />
+      )}
+      {isEditNameModalVisible && (
+        <EditNameModal
+          handleCancel={handleEditNameCancel}
+          ids={selectedRowIds}
+        />
+      )}
     </PageContainer>
   );
 };

@@ -116,11 +116,12 @@ export default async () => {
           `Neither content nor source specified for ${item.target}`,
         );
       }
-      const content = item.content || (await fs.readFile(item.source!));
+      const content =
+        item.content ||
+        (await fs.readFile(item.source!, { encoding: 'utf-8' }));
       await writeFileWithLock(item.target, content);
     }
   }
 
   Logger.info('✌️ Init file down');
-  console.log('✌️ Init file down');
 };

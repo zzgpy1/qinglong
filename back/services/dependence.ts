@@ -3,12 +3,9 @@ import winston from 'winston';
 import config from '../config';
 import {
   Dependence,
-  InstallDependenceCommandTypes,
   DependenceStatus,
   DependenceTypes,
-  unInstallDependenceCommandTypes,
   DependenceModel,
-  GetDependenceCommandTypes,
   versionDependenceCommandTypes,
 } from '../data/dependence';
 import { spawn } from 'cross-spawn';
@@ -19,6 +16,9 @@ import {
   getPid,
   killTask,
   promiseExecSuccess,
+  getInstallCommand,
+  getUninstallCommand,
+  getGetCommand,
 } from '../config/util';
 import dayjs from 'dayjs';
 import taskLimit from '../shared/pLimit';
@@ -67,6 +67,9 @@ export default class DependenceService {
 
   public async remove(ids: number[], force = false): Promise<Dependence[]> {
     const docs = await DependenceModel.findAll({ where: { id: ids } });
+    for (const doc of docs) {
+      taskLimit.removeQueuedDependency(doc);
+    }
     const unInstalledDeps = docs.filter(
       (x) => x.status !== DependenceStatus.installed,
     );
@@ -132,10 +135,12 @@ export default class DependenceService {
     docs: Dependence[],
     isInstall: boolean = true,
     force: boolean = false,
-  ) {
+  ): Promise<void> {
     docs.forEach((dep) => {
       this.installOrUninstallDependency(dep, isInstall, force);
     });
+
+    return taskLimit.waitDependencyQueueDone();
   }
 
   public async reInstall(ids: number[]): Promise<Dependence[]> {
@@ -145,6 +150,9 @@ export default class DependenceService {
     );
 
     const docs = await DependenceModel.findAll({ where: { id: ids } });
+    for (const doc of docs) {
+      taskLimit.removeQueuedDependency(doc);
+    }
     this.installDependenceOneByOne(docs, true, true);
     return docs;
   }
@@ -153,13 +161,11 @@ export default class DependenceService {
     const docs = await DependenceModel.findAll({ where: { id: ids } });
     for (const doc of docs) {
       taskLimit.removeQueuedDependency(doc);
-      const depInstallCommand = InstallDependenceCommandTypes[doc.type];
-      const depUnInstallCommand = unInstallDependenceCommandTypes[doc.type];
-      const installCmd = `${depInstallCommand} ${doc.name.trim()}`;
-      const unInstallCmd = `${depUnInstallCommand} ${doc.name.trim()}`;
+      const depInstallCommand = getInstallCommand(doc.type, doc.name);
+      const depUnInstallCommand = getUninstallCommand(doc.type, doc.name);
       const pids = await Promise.all([
-        getPid(installCmd),
-        getPid(unInstallCmd),
+        getPid(depInstallCommand),
+        getPid(depUnInstallCommand),
       ]);
       for (const pid of pids) {
         pid && (await killTask(pid));
@@ -226,11 +232,9 @@ export default class DependenceService {
           ? 'installDependence'
           : 'uninstallDependence';
         let depName = dependency.name.trim();
-        const depRunCommand = (
-          isInstall
-            ? InstallDependenceCommandTypes
-            : unInstallDependenceCommandTypes
-        )[dependency.type];
+        const command = isInstall
+          ? getInstallCommand(dependency.type, depName)
+          : getUninstallCommand(dependency.type, depName);
         const actionText = isInstall ? '安装' : '删除';
         const startTime = dayjs();
 
@@ -246,7 +250,7 @@ export default class DependenceService {
 
         // 判断是否已经安装过依赖
         if (isInstall && !force) {
-          const getCommandPrefix = GetDependenceCommandTypes[dependency.type];
+          const getCommand = getGetCommand(dependency.type, depName);
           const depVersionStr = versionDependenceCommandTypes[dependency.type];
           let depVersion = '';
           if (depName.includes(depVersionStr)) {
@@ -263,13 +267,7 @@ export default class DependenceService {
           const isLinuxDependence = dependency.type === DependenceTypes.linux;
           const isPythonDependence =
             dependency.type === DependenceTypes.python3;
-          const depInfo = (
-            await promiseExecSuccess(
-              isNodeDependence
-                ? `${getCommandPrefix} | grep "${depName}" | head -1`
-                : `${getCommandPrefix} ${depName}`,
-            )
-          )
+          const depInfo = (await promiseExecSuccess(getCommand))
             .replace(/\s{2,}/, ' ')
             .replace(/\s+$/, '');
 
@@ -304,12 +302,9 @@ export default class DependenceService {
         const proxyStr = dependenceProxyFileExist
           ? `source ${config.dependenceProxyFile} &&`
           : '';
-        const cp = spawn(
-          `${proxyStr} ${depRunCommand} ${dependency.name.trim()}`,
-          {
-            shell: '/bin/bash',
-          },
-        );
+        const cp = spawn(`${proxyStr} ${command}`, {
+          shell: '/bin/bash',
+        });
 
         cp.stdout.on('data', async (data) => {
           this.sockService.sendMessage({

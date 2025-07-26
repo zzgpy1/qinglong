@@ -31,6 +31,7 @@ import {
   DeleteCronsRequest,
   CronResponse,
 } from '../protos/api';
+import { NotificationInfo } from '../data/notify';
 
 Container.set('logger', LoggerInstance);
 
@@ -39,13 +40,6 @@ export const getEnvs = async (
   callback: sendUnaryData<EnvsResponse>,
 ) => {
   try {
-    if (!call.request.searchValue) {
-      return callback(null, {
-        code: 400,
-        data: [],
-        message: 'searchValue is required',
-      });
-    }
     const envService = Container.get(EnvService);
     const data = await envService.envs(call.request.searchValue);
     callback(null, {
@@ -79,9 +73,17 @@ export const updateEnv = async (
   callback: sendUnaryData<EnvResponse>,
 ) => {
   try {
+    if (!call.request.env?.id) {
+      return callback(null, {
+        code: 400,
+        data: undefined,
+        message: 'id parameter is required',
+      });
+    }
+
     const envService = Container.get(EnvService);
     const data = await envService.update(
-      pick(call.request.env, ['id', 'name', 'value', 'remark']) as EnvItem,
+      pick(call.request.env, ['id', 'name', 'value', 'remarks']) as EnvItem,
     );
     callback(null, { code: 200, data });
   } catch (e: any) {
@@ -94,6 +96,13 @@ export const deleteEnvs = async (
   callback: sendUnaryData<Response>,
 ) => {
   try {
+    if (!call.request.ids || call.request.ids.length === 0) {
+      return callback(null, {
+        code: 400,
+        message: 'ids parameter is required',
+      });
+    }
+
     const envService = Container.get(EnvService);
     await envService.remove(call.request.ids);
     callback(null, { code: 200 });
@@ -107,6 +116,14 @@ export const moveEnv = async (
   callback: sendUnaryData<EnvResponse>,
 ) => {
   try {
+    if (!call.request.id) {
+      return callback(null, {
+        code: 400,
+        data: undefined,
+        message: 'id parameter is required',
+      });
+    }
+
     const envService = Container.get(EnvService);
     const data = await envService.move(call.request.id, {
       fromIndex: call.request.fromIndex,
@@ -123,6 +140,13 @@ export const disableEnvs = async (
   callback: sendUnaryData<Response>,
 ) => {
   try {
+    if (!call.request.ids || call.request.ids.length === 0) {
+      return callback(null, {
+        code: 400,
+        message: 'ids parameter is required',
+      });
+    }
+
     const envService = Container.get(EnvService);
     await envService.disabled(call.request.ids);
     callback(null, { code: 200 });
@@ -136,6 +160,13 @@ export const enableEnvs = async (
   callback: sendUnaryData<Response>,
 ) => {
   try {
+    if (!call.request.ids || call.request.ids.length === 0) {
+      return callback(null, {
+        code: 400,
+        message: 'ids parameter is required',
+      });
+    }
+
     const envService = Container.get(EnvService);
     await envService.enabled(call.request.ids);
     callback(null, { code: 200 });
@@ -149,6 +180,13 @@ export const updateEnvNames = async (
   callback: sendUnaryData<Response>,
 ) => {
   try {
+    if (!call.request.ids || call.request.ids.length === 0) {
+      return callback(null, {
+        code: 400,
+        message: 'ids parameter is required',
+      });
+    }
+
     const envService = Container.get(EnvService);
     await envService.updateNames({
       ids: call.request.ids,
@@ -165,6 +203,14 @@ export const getEnvById = async (
   callback: sendUnaryData<EnvResponse>,
 ) => {
   try {
+    if (!call.request.id) {
+      return callback(null, {
+        code: 400,
+        data: undefined,
+        message: 'id parameter is required',
+      });
+    }
+
     const envService = Container.get(EnvService);
     const data = await envService.getDb({ id: call.request.id });
     callback(null, {
@@ -182,7 +228,11 @@ export const systemNotify = async (
 ) => {
   try {
     const systemService = Container.get(SystemService);
-    const data = await systemService.notify(call.request);
+    const data = await systemService.notify({
+      title: call.request.title,
+      content: call.request.content,
+      notificationInfo: call.request.notificationInfo as unknown as NotificationInfo,
+    });
     callback(null, data);
   } catch (e: any) {
     callback(e);

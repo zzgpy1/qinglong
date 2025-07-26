@@ -74,14 +74,12 @@ check_pm2() {
 main() {
   echo -e "=====> 开始检测"
   npm i -g pnpm@8.3.1 pm2 ts-node
-  patch_version
 
   reset_env
   copy_dep
   check_ql
   check_nginx
   check_pm2
-  reload_update
   reload_pm2
   echo -e "\n=====> 检测结束\n"
 }

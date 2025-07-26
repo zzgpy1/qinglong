@@ -68,11 +68,9 @@ const DragableBodyRow = ({
 const ViewManageModal = ({
   cronViews,
   handleCancel,
-  visible,
   cronViewChange,
 }: {
   cronViews: any[];
-  visible: boolean;
   handleCancel: () => void;
   cronViewChange: (data?: any) => void;
 }) => {
@@ -85,7 +83,7 @@ const ViewManageModal = ({
       title: intl.get('名称'),
       dataIndex: 'name',
       key: 'name',
-      render: (v) => (v === '全部任务' ? intl.get('全部任务') : v)
+      render: (v) => (v === '全部任务' ? intl.get('全部任务') : v),
     },
     {
       title: intl.get('类型'),
@@ -162,9 +160,6 @@ const ViewManageModal = ({
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -221,7 +216,7 @@ const ViewManageModal = ({
   return (
     <Modal
       title={intl.get('视图管理')}
-      open={visible}
+      open={true}
       centered
       width={620}
       onCancel={() => handleCancel()}
@@ -266,14 +261,15 @@ const ViewManageModal = ({
           }}
         />
       </DndProvider>
-      <ViewCreateModal
-        view={editedView}
-        visible={isCreateViewModalVisible}
-        handleCancel={(data) => {
-          setIsCreateViewModalVisible(false);
-          cronViewChange(data);
-        }}
-      />
+      {isCreateViewModalVisible && (
+        <ViewCreateModal
+          view={editedView}
+          handleCancel={(data) => {
+            setIsCreateViewModalVisible(false);
+            cronViewChange(data);
+          }}
+        />
+      )}
     </Modal>
   );
 };

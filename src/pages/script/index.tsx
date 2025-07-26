@@ -1,52 +1,49 @@
-import intl from 'react-intl-universal';
-import { useState, useEffect, useCallback, Key, useRef } from 'react';
-import {
-  TreeSelect,
-  Tree,
-  Input,
-  Button,
-  Modal,
-  message,
-  Typography,
-  Tooltip,
-  Dropdown,
-  Menu,
-  Empty,
-  MenuProps,
-} from 'antd';
+import IconFont from '@/components/iconfont';
+import useFilterTreeData from '@/hooks/useFilterTreeData';
+import { SharedContext } from '@/layouts';
+import { depthFirstSearch, findNode, getEditorMode } from '@/utils';
 import config from '@/utils/config';
-import { PageContainer } from '@ant-design/pro-layout';
-import Editor from '@monaco-editor/react';
 import { request } from '@/utils/http';
-import styles from './index.module.less';
-import EditModal from './editModal';
-import CodeMirror from '@uiw/react-codemirror';
-import SplitPane from 'react-split-pane';
+import { canPreviewInMonaco } from '@/utils/monaco';
 import {
+  CloudDownloadOutlined,
   DeleteOutlined,
-  DownloadOutlined,
   EditOutlined,
   EllipsisOutlined,
-  FormOutlined,
   PlusOutlined,
-  PlusSquareOutlined,
-  SearchOutlined,
-  UserOutlined,
 } from '@ant-design/icons';
-import EditScriptNameModal from './editNameModal';
-import debounce from 'lodash/debounce';
-import { history, useOutletContext, useLocation } from '@umijs/max';
-import { parse } from 'query-string';
-import { depthFirstSearch, findNode, getEditorMode } from '@/utils';
-import { SharedContext } from '@/layouts';
-import useFilterTreeData from '@/hooks/useFilterTreeData';
-import uniq from 'lodash/uniq';
-import IconFont from '@/components/iconfont';
-import RenameModal from './renameModal';
+import { PageContainer } from '@ant-design/pro-layout';
+import Editor from '@monaco-editor/react';
 import { langs } from '@uiw/codemirror-extensions-langs';
-import { useHotkeys } from 'react-hotkeys-hook';
+import CodeMirror from '@uiw/react-codemirror';
+import { history, useOutletContext } from '@umijs/max';
+import {
+  Button,
+  Dropdown,
+  Empty,
+  Input,
+  MenuProps,
+  message,
+  Modal,
+  Tooltip,
+  Tree,
+  TreeSelect,
+  Typography,
+} from 'antd';
+import { saveAs } from 'file-saver';
+import debounce from 'lodash/debounce';
+import uniq from 'lodash/uniq';
 import prettyBytes from 'pretty-bytes';
-import { canPreviewInMonaco } from '@/utils/monaco';
+import { parse } from 'query-string';
+import { Key, useCallback, useEffect, useRef, useState } from 'react';
+import { useHotkeys } from 'react-hotkeys-hook';
+import intl from 'react-intl-universal';
+import SplitPane from 'react-split-pane';
+import EditModal from './editModal';
+import EditScriptNameModal from './editNameModal';
+import styles from './index.module.less';
+import RenameModal from './renameModal';
+import UnsupportedFilePreview from './components/UnsupportedFilePreview';
 const { Text } = Typography;
 
 const Script = () => {
@@ -67,6 +64,7 @@ const Script = () => {
     useState(false);
   const [currentNode, setCurrentNode] = useState<any>();
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [showMonaco, setShowMonaco] = useState(true);
 
   const handleIsEditing = (filename: string, value: boolean) => {
     setIsEditing(value && canPreviewInMonaco(filename));
@@ -86,7 +84,7 @@ const Script = () => {
       .finally(() => needLoading && setLoading(false));
   };
 
-  const getDetail = (node: any) => {
+  const getDetail = (node: any, options: any = {}) => {
     request
       .get(
         `${config.apiPrefix}scripts/detail?file=${encodeURIComponent(
@@ -96,7 +94,25 @@ const Script = () => {
       .then(({ code, data }) => {
         if (code === 200) {
           setValue(data);
+          if (options.callback) {
+            options.callback();
+          }
         }
+      });
+  };
+
+  const downloadScript = () => {
+    request
+      .post<Blob>(
+        `${config.apiPrefix}scripts/download`,
+        {
+          filename: currentNode.title,
+          path: currentNode.parent || '',
+        },
+        { responseType: 'blob' },
+      )
+      .then((res) => {
+        saveAs(res, currentNode.title);
       });
   };
 
@@ -130,18 +146,27 @@ const Script = () => {
 
     if (node.type === 'directory') {
       setValue(intl.get('请选择脚本文件'));
+      setShowMonaco(true);
       return;
     }
 
     if (!canPreviewInMonaco(node.title)) {
-      setValue(intl.get('当前文件不支持预览'));
+      setShowMonaco(false);
       return;
     }
 
+    setShowMonaco(true);
     const newMode = getEditorMode(value);
     setMode(isPhone && newMode === 'typescript' ? 'javascript' : newMode);
     setValue(intl.get('加载中...'));
-    getDetail(node);
+
+    getDetail(node, {
+      callback: () => {
+        if (isEditing) {
+          setIsEditing(true);
+        }
+      },
+    });
   };
 
   const onTreeSelect = useCallback(
@@ -150,19 +175,19 @@ const Script = () => {
       if (node.key === select && isEditing) {
         return;
       }
-      const content = editorRef.current
+
+      const currentContent = editorRef.current
         ? editorRef.current.getValue().replace(/\r\n/g, '\n')
         : value;
-      if (content !== value) {
+      const originalContent = value.replace(/\r\n/g, '\n');
+
+      if (currentContent !== originalContent && isEditing) {
         Modal.confirm({
-          title: `确认离开`,
-          content: <>{intl.get('当前修改未保存，确定离开吗')}</>,
+          title: intl.get('确认离开'),
+          content: <>{intl.get('当前文件未保存，确认离开吗')}</>,
           onOk() {
             onSelect(keys[0], e.node);
             handleIsEditing(e.node.title, false);
-          },
-          onCancel() {
-            console.log('Cancel');
           },
         });
       } else {
@@ -257,9 +282,6 @@ const Script = () => {
             .catch((e) => reject(e));
         });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -309,9 +331,6 @@ const Script = () => {
             }
           });
       },
-      onCancel() {
-        console.log('Cancel');
-      },
     });
   };
 
@@ -328,18 +347,29 @@ const Script = () => {
     setIsAddFileModalVisible(true);
   };
 
-  const addFileModalClose = (
-    { filename, path, key }: { filename: string; path: string; key: string } = {
+  const addFileModalClose = async (
+    {
+      filename,
+      path,
+      key,
+      type,
+    }: { filename: string; path: string; key: string; type?: string } = {
       filename: '',
       path: '',
       key: '',
     },
   ) => {
     if (filename) {
-      let newData = [...data];
-      const _file = { title: filename, key, parent: path };
+      const res = await request.get(`${config.apiPrefix}scripts`);
+      let newData = res.data;
+      if (type === 'directory' && filename.includes('/')) {
+        const parts = filename.split('/');
+        parts.pop();
+        const parentPath = parts.join('/');
+        path = path ? `${path}/${parentPath}` : parentPath;
+      }
+      const item = findNode(newData, (c) => c.key === key);
       if (path) {
-        newData = depthFirstSearch(newData, (c) => c.key === path, _file);
         const keys = path.split('/');
         const sKeys: string[] = [];
         keys.reduce((p, c) => {
@@ -347,33 +377,12 @@ const Script = () => {
           return `${p}/${c}`;
         });
         setExpandedKeys([...expandedKeys, ...sKeys, path]);
-      } else {
-        newData.unshift(_file);
       }
       setData(newData);
-      onSelect(_file.title, _file);
-      handleIsEditing(_file.title, true);
+      onSelect(item.title, item);
+      handleIsEditing(item.title, true);
     }
     setIsAddFileModalVisible(false);
-  };
-
-  const downloadFile = () => {
-    request
-      .post(`${config.apiPrefix}scripts/download`, {
-        filename: currentNode.title,
-      })
-      .then(({ code, data }) => {
-        if (code === 200) {
-          const blob = new Blob([data], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = currentNode.title;
-          document.documentElement.appendChild(a);
-          a.click();
-          document.documentElement.removeChild(a);
-        }
-      });
   };
 
   const initState = () => {
@@ -482,21 +491,19 @@ const Script = () => {
             label: intl.get('编辑'),
             key: 'edit',
             icon: <EditOutlined />,
-            disabled:
-              !select ||
-              (currentNode && !canPreviewInMonaco(currentNode?.title)),
+            disabled: !currentNode,
           },
           {
             label: intl.get('重命名'),
             key: 'rename',
             icon: <IconFont type="ql-icon-rename" />,
-            disabled: !select,
+            disabled: !currentNode,
           },
           {
             label: intl.get('删除'),
             key: 'delete',
             icon: <DeleteOutlined />,
-            disabled: !select,
+            disabled: !currentNode,
           },
         ],
         onClick: ({ key, domEvent }) => {
@@ -504,6 +511,20 @@ const Script = () => {
           menuAction(key);
         },
       };
+
+  const handleForceOpen = () => {
+    if (!currentNode) return;
+
+    setMode('plaintext');
+    setValue(intl.get('加载中...'));
+    setShowMonaco(true);
+
+    getDetail(currentNode, {
+      callback: () => {
+        setIsEditing(true);
+      },
+    });
+  };
 
   return (
     <PageContainer
@@ -566,10 +587,7 @@ const Script = () => {
               </Tooltip>,
               <Tooltip title={intl.get('编辑')}>
                 <Button
-                  disabled={
-                    !select ||
-                    (currentNode && !canPreviewInMonaco(currentNode?.title))
-                  }
+                  disabled={!currentNode}
                   type="primary"
                   onClick={editFile}
                   icon={<EditOutlined />}
@@ -577,16 +595,24 @@ const Script = () => {
               </Tooltip>,
               <Tooltip title={intl.get('重命名')}>
                 <Button
-                  disabled={!select}
+                  disabled={!currentNode}
                   type="primary"
                   onClick={renameFile}
                   icon={<IconFont type="ql-icon-rename" />}
                 />
               </Tooltip>,
+              <Tooltip title={intl.get('下载')}>
+                <Button
+                  disabled={!currentNode || currentNode.type === 'directory'}
+                  type="primary"
+                  onClick={downloadScript}
+                  icon={<CloudDownloadOutlined />}
+                />
+              </Tooltip>,
               <Tooltip title={intl.get('删除')}>
                 <Button
                   type="primary"
-                  disabled={!select}
+                  disabled={!currentNode}
                   onClick={deleteFile}
                   icon={<DeleteOutlined />}
                 />
@@ -650,21 +676,25 @@ const Script = () => {
                 </div>
               )}
             </div>
-            <Editor
-              language={mode}
-              value={value}
-              theme={theme}
-              options={{
-                readOnly: !isEditing,
-                fontSize: 12,
-                lineNumbersMinChars: 3,
-                glyphMargin: false,
-                accessibilitySupport: 'off',
-              }}
-              onMount={(editor) => {
-                editorRef.current = editor;
-              }}
-            />
+            {showMonaco ? (
+              <Editor
+                language={mode}
+                value={value}
+                theme={theme}
+                options={{
+                  readOnly: !isEditing,
+                  fontSize: 12,
+                  lineNumbersMinChars: 3,
+                  glyphMargin: false,
+                  accessibilitySupport: 'off',
+                }}
+                onMount={(editor) => {
+                  editorRef.current = editor;
+                }}
+              />
+            ) : (
+              <UnsupportedFilePreview onForceOpen={handleForceOpen} />
+            )}
           </SplitPane>
         )}
         {isPhone && (
@@ -680,9 +710,8 @@ const Script = () => {
             }}
           />
         )}
-        {isLogModalVisible && (
+        {isLogModalVisible && isLogModalVisible && (
           <EditModal
-            visible={isLogModalVisible}
             treeData={data}
             currentNode={currentNode}
             content={value}
@@ -691,16 +720,18 @@ const Script = () => {
             }}
           />
         )}
-        <EditScriptNameModal
-          visible={isAddFileModalVisible}
-          treeData={data}
-          handleCancel={addFileModalClose}
-        />
-        <RenameModal
-          visible={isRenameFileModalVisible}
-          handleCancel={handleRenameFileCancel}
-          currentNode={currentNode}
-        />
+        {isAddFileModalVisible && (
+          <EditScriptNameModal
+            treeData={data}
+            handleCancel={addFileModalClose}
+          />
+        )}
+        {isRenameFileModalVisible && (
+          <RenameModal
+            handleCancel={handleRenameFileCancel}
+            currentNode={currentNode}
+          />
+        )}
       </div>
     </PageContainer>
   );

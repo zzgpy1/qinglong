@@ -212,20 +212,25 @@ run_extra_shell() {
 
 ## 脚本用法
 usage() {
-  echo -e "ql命令使用方法："
-  echo -e "1. $cmd_update update                                                                  # 更新并重启青龙"
-  echo -e "2. $cmd_update extra                                                                   # 运行自定义脚本"
-  echo -e "3. $cmd_update raw <fileurl>                                                            # 更新单个脚本文件"
-  echo -e "4. $cmd_update repo <repourl> <path> <blacklist> <dependence> <branch> <extensions>    # 更新单个仓库的脚本"
-  echo -e "5. $cmd_update rmlog <days>                                                            # 删除旧日志"
-  echo -e "6. $cmd_update bot                                                                     # 启动tg-bot"
-  echo -e "7. $cmd_update check                                                                   # 检测青龙环境并修复"
-  echo -e "8. $cmd_update resetlet                                                                # 重置登录错误次数"
-  echo -e "9. $cmd_update resettfa                                                                # 禁用两步登录"
+  echo -e "$cmd_update 命令使用方法："
+  echo -e "1.  $cmd_update update                                                                  # 更新并重启青龙"
+  echo -e "2.  $cmd_update extra                                                                   # 运行自定义脚本"
+  echo -e "3.  $cmd_update raw <fileurl>                                                           # 更新单个脚本文件"
+  echo -e "4.  $cmd_update repo <repourl> <path> <blacklist> <dependence> <branch> <extensions>    # 更新单个仓库的脚本"
+  echo -e "5.  $cmd_update rmlog <days>                                                            # 删除旧日志"
+  echo -e "6.  $cmd_update bot                                                                     # 启动tg-bot"
+  echo -e "7.  $cmd_update check                                                                   # 检测青龙环境并修复"
+  echo -e "8.  $cmd_update resetlet                                                                # 重置登录错误次数"
+  echo -e "9.  $cmd_update resettfa                                                                # 禁用两步登录"
+  echo -e "10. $cmd_update resetpwd                                                                # 修改登录密码"
+  echo -e "11. $cmd_update resetname                                                               # 修改登录用户名"
 }
 
 reload_qinglong() {
+  echo -e "[reload_qinglong] deleting Triggered at $(date)" >>${dir_log}/reload.log
+  sleep 3
   delete_pm2
+  echo -e "[reload_qinglong] deleted Triggered at $(date)" >>${dir_log}/reload.log
 
   local reload_target="${1}"
   local primary_branch="master"
@@ -245,8 +250,9 @@ reload_qinglong() {
     rm -rf ${dir_data}/*
     mv -f ${dir_tmp}/data/* ${dir_data}/
   fi
-
+  echo -e "[reload_qinglong] starting Triggered at $(date)" >>${dir_log}/reload.log
   reload_pm2
+  echo -e "[reload_qinglong] started Triggered at $(date)\n" >>${dir_log}/reload.log
 }
 
 ## 更新 qinglong
@@ -307,15 +313,7 @@ check_update_dep() {
     echo -e "更新包下载成功..."
 
     if [[ "$needRestart" == 'true' ]]; then
-      delete_pm2
-
-      rm -rf ${dir_root}/back ${dir_root}/cli ${dir_root}/docker ${dir_root}/sample ${dir_root}/shell ${dir_root}/src
-      mv -f ${dir_tmp}/qinglong-${primary_branch}/* ${dir_root}/
-      rm -rf $dir_static/*
-      mv -f ${dir_tmp}/qinglong-static-${primary_branch}/* ${dir_static}/
-      cp -f $file_config_sample $dir_config/config.sample.sh
-
-      reload_pm2
+      reload_qinglong "system"
     fi
   else
     echo -e "\n依赖检测安装失败，请检查网络...\n"
@@ -545,6 +543,9 @@ main() {
     ;;
   resetpwd)
     eval update_auth_config "\\\"password\\\":\\\"$p2\\\"" "重置密码" $cmd
+    ;;
+  resetname)
+    eval update_auth_config "\\\"username\\\":\\\"$p2\\\"" "重置用户名" $cmd
     ;;
   *)
     eval echo -e "命令输入错误...\\\n" $cmd

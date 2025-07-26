@@ -19,14 +19,13 @@ const { Option } = Select;
 const EditScriptNameModal = ({
   handleCancel,
   treeData,
-  visible,
 }: {
-  visible: boolean;
   treeData: any[];
   handleCancel: (file?: {
     filename: string;
     path: string;
     key: string;
+    type: string;
   }) => void;
 }) => {
   const [form] = Form.useForm();
@@ -52,11 +51,12 @@ const EditScriptNameModal = ({
             directory ? intl.get('创建文件夹成功') : intl.get('创建文件成功'),
           );
           const key = path ? `${path}/` : '';
-          const filename = file ? file.name : inputFilename;
+          const filename = file ? file.name : directory || inputFilename;
           handleCancel({
             filename,
             path,
             key: `${key}${filename}`,
+            type: directory ? 'directory' : 'file',
           });
         }
         setLoading(false);
@@ -93,14 +93,10 @@ const EditScriptNameModal = ({
     setDirs(dirs);
   }, [treeData]);
 
-  useEffect(() => {
-    form.resetFields();
-  }, [visible]);
-
   return (
     <Modal
       title={intl.get('创建')}
-      open={visible}
+      open={true}
       forceRender
       centered
       maskClosable={false}
